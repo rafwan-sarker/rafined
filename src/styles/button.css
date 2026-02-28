@@ -1,0 +1,54 @@
+.rafined-enhance-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(99, 102, 241, 0.3);
+}
+
+.rafined-enhance-btn:hover {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.4);
+  transform: translateY(-1px);
+}
+
+.rafined-enhance-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.3);
+}
+
+.rafined-enhance-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.rafined-enhance-btn .icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.rafined-enhance-btn.loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.rafined-enhance-btn.loading .icon {
+  animation: rafined-spin 1s linear infinite;
+}
+
+@keyframes rafined-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
