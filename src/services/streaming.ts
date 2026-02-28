@@ -7,9 +7,7 @@ export interface SSEEvent {
  * Parse SSE text buffer into events. Returns { events, remaining } where
  * remaining is the incomplete buffer to carry forward.
  *
- * The Anthropic API returns Server-Sent Events when `stream: true` is set.
- * Each event block has an `event:` line, a `data:` line, and is terminated
- * by a blank line.
+ * OpenAI returns `data:` lines separated by blank lines. No `event:` lines.
  */
 export function parseSSE(buffer: string): {
   events: SSEEvent[];
@@ -26,7 +24,6 @@ export function parseSSE(buffer: string): {
 
     // If this is the last line and doesn't end with newline, it's incomplete
     if (i === lines.length - 1 && !buffer.endsWith('\n')) {
-      // Reconstruct remaining from current state
       remaining = line;
       if (currentEvent || currentData) {
         remaining =
@@ -55,15 +52,16 @@ export function parseSSE(buffer: string): {
 }
 
 /**
- * Extract text delta from an Anthropic SSE event.
- * Only `content_block_delta` events with a `text_delta` type carry text.
+ * Extract text delta from an OpenAI SSE event.
+ * OpenAI sends `choices[0].delta.content` for text chunks.
  */
 export function extractTextDelta(event: SSEEvent): string | null {
-  if (event.event !== 'content_block_delta') return null;
+  if (event.data === '[DONE]') return null;
   try {
     const parsed = JSON.parse(event.data);
-    if (parsed.delta?.type === 'text_delta') {
-      return parsed.delta.text;
+    const content = parsed.choices?.[0]?.delta?.content;
+    if (typeof content === 'string') {
+      return content;
     }
   } catch {
     // Skip unparseable events
@@ -73,7 +71,8 @@ export function extractTextDelta(event: SSEEvent): string | null {
 
 /**
  * Check if the event signals the end of the stream.
+ * OpenAI signals completion with `data: [DONE]`.
  */
 export function isStreamEnd(event: SSEEvent): boolean {
-  return event.event === 'message_stop';
+  return event.data === '[DONE]';
 }

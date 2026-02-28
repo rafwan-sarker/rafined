@@ -27,7 +27,7 @@ export function SettingsForm() {
       <div className="form-group">
         <label className="form-label">
           API Key
-          <span className="form-sublabel">(Anthropic)</span>
+          <span className="form-sublabel">(OpenAI)</span>
         </label>
         <div className="api-key-wrapper">
           <input
@@ -35,7 +35,7 @@ export function SettingsForm() {
             className="form-input"
             value={settings.apiKey}
             onChange={(e) => handleSave({ apiKey: e.target.value })}
-            placeholder="sk-ant-..."
+            placeholder="sk-..."
           />
           <button
             className="api-key-toggle"

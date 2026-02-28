@@ -2,7 +2,7 @@ import { ENHANCE_PORT } from '../lib/messaging';
 import { getSettings } from '../lib/storage';
 import { addToHistory } from '../lib/storage';
 import { buildSystemPrompt, buildUserMessage, stripPreamble } from '../services/enhance';
-import { callAnthropicStream } from '../services/api';
+import { callApiStream } from '../services/api';
 import { parseSSE, extractTextDelta, isStreamEnd } from '../services/streaming';
 import type { MessageToBackground, MessageToContent } from '../types/messages';
 
@@ -36,7 +36,7 @@ export default defineBackground(() => {
 
         abortController = new AbortController();
 
-        const response = await callAnthropicStream(
+        const response = await callApiStream(
           {
             apiKey: settings.apiKey,
             systemPrompt,

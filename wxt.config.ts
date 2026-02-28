@@ -7,7 +7,7 @@ export default defineConfig({
     name: 'RAFined — AI Prompt Enhancer',
     description: 'Enhance your AI prompts with one click using prompt engineering best practices',
     permissions: ['storage'],
-    host_permissions: ['https://api.anthropic.com/*'],
+    host_permissions: ['https://api.openai.com/*'],
     icons: {
       '16': 'icons/icon-16.svg',
       '48': 'icons/icon-48.svg',
