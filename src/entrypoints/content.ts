@@ -22,10 +22,16 @@ export default defineContentScript({
     if (!detected) return;
     const adapter: SiteAdapter = detected;
 
-    let buttonUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
-    let modalUi: Awaited<ReturnType<typeof createShadowRootUi>> | null = null;
+    let buttonUi: Awaited<ReturnType<typeof createIntegratedUi>> | null = null;
+    let modalUi: { remove: () => void } | null = null;
     let isModalOpen = false;
     let isEnhancing = false;
+    let isInjecting = false;
+
+    // Inject button CSS into the page (no shadow DOM — avoids attachShadow
+    // which fails on some sites like Gemini)
+    injectStylesheet('rafined-button-css', buttonCss);
+    injectStylesheet('rafined-modal-css', modalCss);
 
     // Watch for DOM changes to detect when the input and send button appear
     setupObserver(ctx, adapter);
@@ -43,7 +49,7 @@ export default defineContentScript({
       let injected = false;
 
       const tryInject = () => {
-        if (injected || ctx.isInvalid) return;
+        if (injected || isInjecting || ctx.isInvalid) return;
         const anchor = adapter.findButtonAnchor();
         const input = adapter.findInput();
         if (anchor && input) {
@@ -63,9 +69,10 @@ export default defineContentScript({
         }
 
         // If button was injected but anchor disappeared (SPA nav), re-inject
-        if (injected) {
+        // Skip check while an injection is in progress to avoid race conditions
+        if (injected && !isInjecting) {
           const anchor = adapter.findButtonAnchor();
-          if (!anchor || !document.contains(buttonUi?.shadowHost ?? null)) {
+          if (!anchor || !document.contains(buttonUi?.wrapper ?? null)) {
             injected = false;
             buttonUi?.remove();
             buttonUi = null;
@@ -97,29 +104,33 @@ export default defineContentScript({
         buttonUi = null;
       }
 
-      buttonUi = await createShadowRootUi(ctx, {
-        name: 'rafined-button',
-        position: 'inline',
-        anchor,
-        append: 'before',
-        css: buttonCss,
-        onMount(container) {
-          const root = ReactDOM.createRoot(container);
-          root.render(
-            React.createElement(EnhanceButton, {
-              onClick: () => handleEnhanceClick(ctx, adapter),
-              disabled: false,
-              loading: isEnhancing,
-            }),
-          );
-          return root;
-        },
-        onRemove(root) {
-          root?.unmount();
-        },
-      });
+      isInjecting = true;
 
-      buttonUi.mount();
+      try {
+        buttonUi = createIntegratedUi(ctx, {
+          position: 'inline',
+          anchor,
+          append: 'before',
+          onMount(wrapper) {
+            const root = ReactDOM.createRoot(wrapper);
+            root.render(
+              React.createElement(EnhanceButton, {
+                onClick: () => handleEnhanceClick(ctx, adapter),
+                disabled: false,
+                loading: isEnhancing,
+              }),
+            );
+            return root;
+          },
+          onRemove(root) {
+            root?.unmount();
+          },
+        });
+
+        buttonUi.mount();
+      } finally {
+        isInjecting = false;
+      }
     }
 
     async function handleEnhanceClick(
@@ -155,9 +166,11 @@ export default defineContentScript({
             error: streamError,
             noApiKey,
             onUseEnhanced: (finalText: string) => {
-              adapter.setPromptText(finalText);
               closeModal();
               port.disconnect();
+              // Small delay to let the dialog close and release focus trap
+              // before we try to focus + insert text into the chat input
+              setTimeout(() => adapter.setPromptText(finalText), 50);
             },
             onKeepOriginal: () => {
               closeModal();
@@ -219,28 +232,47 @@ export default defineContentScript({
         }
       });
 
-      // Open modal
+      // Open modal using native <dialog> for reliable top-layer rendering.
+      // Avoids both z-index issues (Gemini) and attachShadow issues.
+      // CSS is injected into the page head instead of shadow DOM.
       isModalOpen = true;
-      modalUi = await createShadowRootUi(ctx, {
-        name: 'rafined-modal',
-        position: 'modal',
-        zIndex: 2147483647,
-        anchor: document.body,
-        append: 'last',
-        css: modalCss,
-        isolateEvents: true,
-        onMount(container) {
-          const root = ReactDOM.createRoot(container);
-          modalRoot = root;
-          renderModal();
-          return root;
-        },
-        onRemove(root) {
-          root?.unmount();
-          modalRoot = null;
-        },
+
+      const dialog = document.createElement('dialog');
+      dialog.style.cssText = 'position:fixed;inset:0;border:none;padding:0;margin:0;background:transparent;max-width:none;max-height:none;width:100vw;height:100vh;overflow:visible;';
+
+      // Hide default browser backdrop — our overlay handles the dimming
+      injectStylesheet('rafined-dialog-css', 'dialog.rafined-dialog::backdrop{background:transparent}');
+      dialog.className = 'rafined-dialog';
+
+      const container = document.createElement('div');
+      container.style.cssText = 'position:fixed;inset:0;';
+      dialog.appendChild(container);
+
+      document.body.appendChild(dialog);
+      dialog.showModal();
+
+      // Handle Escape key through the dialog's cancel event
+      dialog.addEventListener('cancel', (e) => {
+        e.preventDefault();
+        if (isEnhancing && !streamDone && !streamError) {
+          const cancelMsg: MessageToBackground = { type: 'CANCEL_STREAM' };
+          port.postMessage(cancelMsg);
+        }
+        closeModal();
+        port.disconnect();
       });
-      modalUi.mount();
+
+      modalRoot = ReactDOM.createRoot(container);
+      renderModal();
+
+      modalUi = {
+        remove: () => {
+          modalRoot?.unmount();
+          modalRoot = null;
+          if (dialog.open) dialog.close();
+          dialog.remove();
+        },
+      };
 
       // Send the enhance request
       const request: MessageToBackground = {
@@ -279,6 +311,18 @@ export default defineContentScript({
     }
   },
 });
+
+/**
+ * Inject a stylesheet into the page head (idempotent — skips if already present).
+ * Used instead of shadow DOM to avoid attachShadow failures on some sites.
+ */
+function injectStylesheet(id: string, css: string) {
+  if (document.getElementById(id)) return;
+  const style = document.createElement('style');
+  style.id = id;
+  style.textContent = css;
+  document.head.appendChild(style);
+}
 
 // --------------------------------------------------------------------------
 // EnhanceModal component -- defined inline to keep everything in one file
